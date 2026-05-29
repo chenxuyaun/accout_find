@@ -17,6 +17,16 @@ describe("api client", () => {
     expect(fetchMock).toHaveBeenCalledWith("https://api.example.test/health", expect.any(Object));
   });
 
+  it("defaults local development requests to the FastAPI backend", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: "ok" })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const api = createApiClient();
+    await api.health();
+
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:8000/health", expect.any(Object));
+  });
+
   it("raises a readable error when the backend is unavailable", async () => {
     vi.stubGlobal(
       "fetch",
@@ -70,5 +80,20 @@ describe("api client", () => {
 
     await expect(api.accounts()).rejects.toBeInstanceOf(ApiError);
     await expect(api.accounts()).rejects.toThrow("not found");
+  });
+
+  it("raises a readable error when an API path returns frontend HTML", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response("<!doctype html><html></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+      ),
+    );
+
+    const api = createApiClient("");
+
+    await expect(api.health()).rejects.toThrow("API 返回了非 JSON 内容");
   });
 });

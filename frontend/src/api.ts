@@ -87,7 +87,7 @@ export class ApiError extends Error {
   }
 }
 
-const defaultBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
+const defaultBaseUrl = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://127.0.0.1:8000" : "");
 
 export function createApiClient(baseUrl = defaultBaseUrl) {
   const normalizedBase = baseUrl.replace(/\/+$/, "");
@@ -107,11 +107,23 @@ export function createApiClient(baseUrl = defaultBaseUrl) {
     }
 
     const text = await response.text();
-    const body = text ? JSON.parse(text) : null;
+    const contentType = response.headers.get("content-type") ?? "";
+    const trimmedText = text.trim();
+    const looksLikeJson = trimmedText.startsWith("{") || trimmedText.startsWith("[");
+    if (text && !contentType.includes("application/json") && !looksLikeJson) {
+      throw new ApiError("API 返回了非 JSON 内容，请检查 VITE_API_BASE_URL 是否指向后端服务。", response.status);
+    }
+
+    let body: unknown = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      throw new ApiError("API 返回了无法解析的 JSON 内容。", response.status);
+    }
 
     if (!response.ok) {
       const message =
-        body?.detail?.message ?? body?.detail?.code ?? body?.message ?? `请求失败：HTTP ${response.status}`;
+        readErrorMessage(body) ?? `请求失败：HTTP ${response.status}`;
       throw new ApiError(message, response.status);
     }
 
@@ -151,3 +163,19 @@ export function createApiClient(baseUrl = defaultBaseUrl) {
 }
 
 export const api = createApiClient();
+
+function readErrorMessage(body: unknown): string | null {
+  if (!body || typeof body !== "object") {
+    return null;
+  }
+
+  const record = body as Record<string, unknown>;
+  const detail = record.detail;
+  if (detail && typeof detail === "object") {
+    const detailRecord = detail as Record<string, unknown>;
+    if (typeof detailRecord.message === "string") return detailRecord.message;
+    if (typeof detailRecord.code === "string") return detailRecord.code;
+  }
+  if (typeof record.message === "string") return record.message;
+  return null;
+}
