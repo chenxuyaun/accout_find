@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,12 +22,16 @@ from backend.services.mock_llm import mock_llm
 from backend.services.privacy_guard import safety_block
 from backend.services.recovery_planner import build_recovery_plan
 from backend.services.risk_auditor import audit_accounts
-from backend.storage import create_account, delete_account, get_account, list_accounts, update_account
+from backend.storage import create_account, delete_account, get_account, list_accounts, load_accounts, update_account
 
 
 def _cors_origins() -> list[str]:
     raw = os.getenv("CORS_ORIGINS", "")
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def _env_flag_enabled(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 app = FastAPI(title="密码记忆替身 API", version="0.2.0")
@@ -36,6 +42,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def seed_demo_on_empty_storage() -> None:
+    if not _env_flag_enabled("DEMO_SEED_ON_EMPTY"):
+        return
+    if load_accounts():
+        return
+
+    from backend.seed_demo import seed_demo_accounts
+
+    seed_demo_accounts()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    seed_demo_on_empty_storage()
+    yield
+
+
+app.router.lifespan_context = lifespan
 
 
 @app.get("/health")

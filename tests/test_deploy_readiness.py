@@ -44,6 +44,23 @@ def test_seed_demo_writes_eight_safe_demo_accounts(monkeypatch, tmp_path):
     assert "secret" not in serialized
 
 
+def test_demo_seed_on_empty_populates_accounts_on_startup(monkeypatch, tmp_path):
+    monkeypatch.setenv("PASSWORD_MEMORY_DATA_FILE", str(tmp_path / "accounts.enc"))
+    monkeypatch.setenv("FERNET_KEY", Fernet.generate_key().decode())
+    monkeypatch.setenv("DEMO_SEED_ON_EMPTY", "true")
+    from backend import main
+
+    reloaded_main = importlib.reload(main)
+
+    with TestClient(reloaded_main.app) as client:
+        response = client.get("/accounts")
+
+    assert response.status_code == 200
+    accounts = response.json()
+    assert len(accounts) == 8
+    assert all(account["platformName"] for account in accounts)
+
+
 def test_repo_hygiene_files_document_safe_demo_boundaries():
     gitignore = open(".gitignore", encoding="utf-8").read()
     readme = open("README.md", encoding="utf-8").read()
