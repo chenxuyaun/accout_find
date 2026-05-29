@@ -90,12 +90,20 @@ cd litellm
 cp .env.example .env
 # 编辑 .env，至少填入 OPENAI_API_KEY
 
-# 3. 启动服务
-docker-compose up -d
+# 3. 运行安全检查（生产环境推荐）
+python check_keys.py --strict
 
-# 4. 验证服务健康
+# 4. 启动服务
+docker-compose up -d
+# 或使用安全启动脚本（自动检查密钥）：
+#   Linux/Mac: ./start.sh
+#   Windows:   .\start.ps1
+
+# 5. 验证服务健康
 curl http://localhost:4000/health
 ```
+
+> ⚠️ **安全提醒**：生产环境必须更换 `.env` 中的默认密钥（`LITELLM_MASTER_KEY`、`LITELLM_SALT_KEY`、`POSTGRES_PASSWORD`）。可使用 `python check_keys.py --strict` 检查。开发环境可使用 `--dev` 跳过检查。
 
 **管理界面**：
 - LiteLLM 管理 UI: http://localhost:4000（使用 `LITELLM_MASTER_KEY` 登录）
@@ -104,7 +112,7 @@ curl http://localhost:4000/health
 **环境变量**（后端）：
 
 - `LITELLM_PROXY_URL`: LiteLLM Proxy 地址（默认：`http://localhost:4000`）
-- `LITELLM_MASTER_KEY`: LiteLLM 管理密钥（默认：`sk-litellm-master-key`）
+- `LITELLM_MASTER_KEY`: LiteLLM 管理密钥（默认：`sk-litellm-master-key`，生产环境必须更换）
 - `LLM_DEFAULT_MODEL`: 默认模型别名（默认：`gpt-4o-mini`）
 
 **特性**：

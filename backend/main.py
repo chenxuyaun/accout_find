@@ -11,24 +11,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from backend.models import AccountIdentity, SafetyPolicy
-from backend.llm_config_store import get_preference, set_preference
+from backend.routers.llm_config import router as llm_router
 from backend.schemas import (
     ChatRequest,
     ClueExtractRequest,
-    LLMConfigResponse,
-    LLMConfigUpdateRequest,
-    LLMModelAddRequest,
-    LLMModelDeleteRequest,
-    LLMModelItem,
-    LLMModelListResponse,
-    LLMModelTestRequest,
     MigrationEmailRequest,
     MigrationPhoneRequest,
     OcrImportRequest,
     RecoveryPlanRequest,
 )
 from backend.services.clue_extractor import extract_clues
-from backend.services.llm_service import call_llm
+from backend.services.litellm_proxy_client import chat_completion_stream
+from backend.services.llm_service import _build_prompt, _get_default_model, call_llm
 from backend.services.migration_checker import check_email_migration, check_phone_migration
 from backend.services.mock_llm import mock_llm
 from backend.services.privacy_guard import safety_block
@@ -100,6 +94,18 @@ def accounts_create(account: AccountIdentity) -> AccountIdentity | dict:
     blocked = safety_block(account.model_dump_json())
     if blocked:
         return blocked
+
+    # 幂等性检查：同一平台名不能重复创建
+    existing = list_accounts()
+    for existing_account in existing:
+        if existing_account.platformName.lower() == account.platformName.lower():
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "duplicate_platform",
+                    "message": f"平台 '{account.platformName}' 已存在（ID: {existing_account.id}），请使用 PATCH 更新已有记录。",
+                },
+            )
     return create_account(account)
 
 
@@ -180,9 +186,6 @@ async def chat(request: ChatRequest):
         # 流式响应模式（SSE）
         async def generate():
             try:
-                from backend.services.litellm_proxy_client import chat_completion_stream
-                from backend.services.llm_service import _build_prompt, _get_default_model
-
                 model = _get_default_model()
                 system_prompt = _build_prompt(request.message)
                 async for chunk in chat_completion_stream(
@@ -223,122 +226,5 @@ async def chat(request: ChatRequest):
         }
 
 
-# ============================================================
-# LLM 配置管理路由
-# ============================================================
-
-@app.get("/llm/config", response_model=LLMConfigResponse)
-async def llm_get_config() -> LLMConfigResponse:
-    """获取 LLM 配置（默认模型 + Proxy 健康状态）"""
-    from backend.services.litellm_proxy_client import health_check as proxy_health
-
-    default_model = get_preference("default_model", os.getenv("LLM_DEFAULT_MODEL", "gpt-4o-mini"))
-    proxy_url = os.getenv("LITELLM_PROXY_URL", "http://localhost:4000")
-
-    proxy_healthy = False
-    try:
-        await proxy_health()
-        proxy_healthy = True
-    except Exception:
-        pass
-
-    return LLMConfigResponse(
-        default_model=default_model,
-        proxy_url=proxy_url,
-        proxy_healthy=proxy_healthy,
-    )
-
-
-@app.patch("/llm/config")
-async def llm_update_config(request: LLMConfigUpdateRequest) -> dict:
-    """更新 LLM 配置（设置默认模型等）"""
-    set_preference("default_model", request.default_model)
-    return {"status": "ok", "default_model": request.default_model}
-
-
-@app.get("/llm/models", response_model=LLMModelListResponse)
-async def llm_list_models() -> LLMModelListResponse:
-    """获取 LiteLLM Proxy 中已配置的所有模型"""
-    from backend.services.litellm_proxy_client import list_models as proxy_list_models
-
-    try:
-        models = await proxy_list_models()
-        items = []
-        for m in models:
-            litellm_params = m.litellm_params or {}
-            full_model = litellm_params.get("model", "")
-            # 解析 provider/model：格式为 "openai/gpt-4o"
-            provider, actual_model = "", full_model
-            if "/" in full_model:
-                parts = full_model.split("/", 1)
-                provider = parts[0]
-                actual_model = parts[1]
-
-            items.append(LLMModelItem(
-                model_name=m.model_name,
-                provider=provider,
-                model=actual_model,
-                api_base=litellm_params.get("api_base", ""),
-                rpm=litellm_params.get("rpm", 0),
-                tpm=litellm_params.get("tpm", 0),
-                has_api_key=bool(litellm_params.get("api_key", "")),
-            ))
-        return LLMModelListResponse(models=items, total=len(items))
-    except Exception as e:
-        raise HTTPException(
-            status_code=502,
-            detail={"code": "proxy_unavailable", "message": f"无法连接 LiteLLM Proxy：{str(e)}"},
-        )
-
-
-@app.post("/llm/models")
-async def llm_add_model(request: LLMModelAddRequest) -> dict:
-    """通过 LiteLLM Proxy 管理 API 添加新模型"""
-    from backend.services.litellm_proxy_client import add_model as proxy_add_model
-
-    try:
-        result = await proxy_add_model(
-            model_name=request.model_name,
-            provider=request.provider,
-            model=request.model,
-            api_key=request.api_key,
-            api_base=request.api_base,
-            rpm=request.rpm,
-            tpm=request.tpm,
-        )
-        return {"status": "ok", "data": result}
-    except Exception as e:
-        raise HTTPException(
-            status_code=502,
-            detail={"code": "add_model_failed", "message": f"添加模型失败：{str(e)}"},
-        )
-
-
-@app.delete("/llm/models/{model_name}")
-async def llm_delete_model(model_name: str) -> dict:
-    """通过 LiteLLM Proxy 管理 API 删除模型"""
-    from backend.services.litellm_proxy_client import delete_model as proxy_delete_model
-
-    try:
-        result = await proxy_delete_model(model_name)
-        return {"status": "ok", "data": result}
-    except Exception as e:
-        raise HTTPException(
-            status_code=502,
-            detail={"code": "delete_model_failed", "message": f"删除模型失败：{str(e)}"},
-        )
-
-
-@app.post("/llm/models/test")
-async def llm_test_model(request: LLMModelTestRequest) -> dict:
-    """测试模型是否可用"""
-    from backend.services.litellm_proxy_client import test_model as proxy_test_model
-
-    try:
-        result = await proxy_test_model(request.model_name, request.message)
-        return {"status": "ok", "data": result}
-    except Exception as e:
-        raise HTTPException(
-            status_code=502,
-            detail={"code": "test_model_failed", "message": f"测试模型失败：{str(e)}"},
-        )
+# LLM 配置管理路由 — 已拆分到 backend/routers/llm_config.py
+app.include_router(llm_router)
