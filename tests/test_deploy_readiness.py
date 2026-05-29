@@ -27,6 +27,27 @@ def test_cors_allows_configured_frontend_origin(monkeypatch, tmp_path):
     assert response.headers["access-control-allow-origin"] == "https://demo.example.com"
 
 
+def test_cors_allows_local_vite_origin_by_default(monkeypatch, tmp_path):
+    monkeypatch.setenv("PASSWORD_MEMORY_DATA_FILE", str(tmp_path / "accounts.enc"))
+    monkeypatch.setenv("FERNET_KEY", Fernet.generate_key().decode())
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
+    from backend import main
+
+    reloaded_main = importlib.reload(main)
+
+    with TestClient(reloaded_main.app) as client:
+        response = client.options(
+            "/health",
+            headers={
+                "Origin": "http://127.0.0.1:5173",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+
+
 def test_seed_demo_writes_eight_safe_demo_accounts(monkeypatch, tmp_path):
     monkeypatch.setenv("PASSWORD_MEMORY_DATA_FILE", str(tmp_path / "accounts.enc"))
     monkeypatch.setenv("FERNET_KEY", Fernet.generate_key().decode())

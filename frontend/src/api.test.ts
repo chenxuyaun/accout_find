@@ -27,6 +27,21 @@ describe("api client", () => {
     expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:8000/health", expect.any(Object));
   });
 
+  it("does not send a content-type header for GET requests", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: "ok" })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const api = createApiClient("http://127.0.0.1:8000");
+    await api.health();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/health",
+      expect.not.objectContaining({
+        headers: expect.objectContaining({ "content-type": "application/json" }),
+      }),
+    );
+  });
+
   it("raises a readable error when the backend is unavailable", async () => {
     vi.stubGlobal(
       "fetch",

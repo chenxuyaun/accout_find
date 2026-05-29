@@ -27,7 +27,10 @@ from backend.storage import create_account, delete_account, get_account, list_ac
 
 def _cors_origins() -> list[str]:
     raw = os.getenv("CORS_ORIGINS", "")
-    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    configured = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    if configured:
+        return configured
+    return ["http://127.0.0.1:5173", "http://localhost:5173"]
 
 
 def _env_flag_enabled(name: str) -> bool:

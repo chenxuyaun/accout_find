@@ -93,14 +93,16 @@ export function createApiClient(baseUrl = defaultBaseUrl) {
   const normalizedBase = baseUrl.replace(/\/+$/, "");
 
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const headers = new Headers(init.headers);
+    if (init.body && !headers.has("content-type")) {
+      headers.set("content-type", "application/json");
+    }
+
     let response: Response;
     try {
       response = await fetch(`${normalizedBase}${path}`, {
         ...init,
-        headers: {
-          "content-type": "application/json",
-          ...(init.headers ?? {}),
-        },
+        headers,
       });
     } catch (error) {
       throw new ApiError(`后端不可用：${error instanceof Error ? error.message : "无法连接服务"}`);
