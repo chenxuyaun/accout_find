@@ -1,9 +1,12 @@
-import {
+﻿import {
   AlertTriangle,
+  Brain,
+  ChevronRight,
   ClipboardCheck,
   FileScan,
   KeyRound,
   Mail,
+  MessageSquare,
   Phone,
   RefreshCw,
   SearchCheck,
@@ -21,6 +24,7 @@ import {
   RecoveryPlan,
   api,
 } from "./api";
+import LLMConfigPage from "./pages/LLMConfigPage";
 
 type ConnectionState = "checking" | "ok" | "failed";
 
@@ -39,6 +43,7 @@ const navItems = [
   { label: "安全体检", icon: ShieldCheck },
   { label: "迁移检查", icon: RefreshCw },
   { label: "OCR 导入", icon: FileScan },
+  { label: "模型配置", icon: Brain },
 ];
 
 function App() {
@@ -52,6 +57,7 @@ function App() {
   const [ocrText, setOcrText] = useState("腾讯云 微信登录 user@example.com");
   const [chatMessage, setChatMessage] = useState("");
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("账号线索");
 
   useEffect(() => {
     let active = true;
@@ -131,67 +137,132 @@ function App() {
     runAction("ocr", async () => ({ kind: "ocr", data: await api.ocrImport(ocrText) }));
   }
 
-  function handleChat(event: FormEvent) {
+  async function handleChat(event: FormEvent) {
     event.preventDefault();
     if (!chatMessage.trim()) return;
-    runAction("chat", async () => ({ kind: "chat", data: await api.chat(chatMessage) }));
+
+    // 使用 SSE 流式对话
+    setBusyAction("chat");
+    setResult({ kind: "chat", data: { status: "ok", reply: "" } });
+
+    try {
+      await api.streamingChat(chatMessage, {
+        onChunk(chunk) {
+          setResult((prev) =>
+            prev.kind === "chat"
+              ? { kind: "chat", data: { ...prev.data, reply: prev.data.reply + chunk } }
+              : prev,
+          );
+        },
+        onComplete(fullReply) {
+          setResult({ kind: "chat", data: { status: "ok", reply: fullReply } });
+          setBusyAction(null);
+        },
+        onError(err) {
+          setResult({ kind: "error", message: err.message });
+          setBusyAction(null);
+        },
+      });
+    } catch (error) {
+      setResult({
+        kind: "error",
+        message: error instanceof Error ? error.message : "聊天请求失败",
+      });
+      setBusyAction(null);
+    }
   }
 
   return (
     <main className="min-h-screen bg-[#f5f4ef] text-[#17201b]">
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)_360px]">
-        <aside className="border-b border-[#d9d3c2] bg-[#ebe7dc] px-5 py-5 lg:border-b-0 lg:border-r">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#637166]">Password Memory</p>
-            <h1 className="mt-2 text-2xl font-semibold">密码记忆替身</h1>
+      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_400px]">
+        {/* 左侧导航栏 */}
+        <aside className="border-b border-[#d9d3c2] bg-[#ebe7dc]/90 px-6 py-6 lg:border-b-0 lg:border-r">
+          <div className="mb-8">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="h-10 w-10 rounded-xl bg-[#1d4f3a] flex items-center justify-center">
+                <KeyRound className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#637166]">Password Memory</p>
+                <h1 className="text-xl font-semibold">密码记忆替身</h1>
+              </div>
+            </div>
           </div>
-          <nav className="mt-8 grid gap-1">
+
+          <nav className="grid gap-1">
             {navItems.map(({ label, icon: Icon }) => (
-              <a
-                className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-[#39443c] hover:bg-[#ded8ca]"
-                href={`#${label}`}
+              <button
+                className={`flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
+                  activeTab === label
+                    ? "bg-[#1d4f3a] text-white shadow-md"
+                    : "text-[#39443c] hover:bg-[#ded8ca]"
+                }`}
                 key={label}
+                onClick={() => setActiveTab(label)}
+                type="button"
               >
-                <Icon aria-hidden="true" size={17} />
+                <Icon aria-hidden="true" size={18} />
                 {label}
-              </a>
+                {activeTab === label && <ChevronRight className="ml-auto" size={16} />}
+              </button>
             ))}
           </nav>
+
           <div className="mt-8 border-t border-[#d9d3c2] pt-5 text-sm">
-            <p className="text-[#637166]">后端状态</p>
-            <p className="mt-2 flex items-center gap-2 font-medium">
-              <span
-                className={`h-2.5 w-2.5 rounded-full ${
+            <p className="text-[#637166] font-medium">后端状态</p>
+            <div className="mt-3 flex items-center gap-2.5">
+              <div
+                className={`relative h-3 w-3 rounded-full ${
                   connection === "ok" ? "bg-[#2f7d57]" : connection === "failed" ? "bg-[#b94a48]" : "bg-[#b8942f]"
                 }`}
-              />
-              {connection === "ok" ? "连接正常" : connection === "failed" ? "连接失败" : "连接中"}
-            </p>
-            {error ? <p className="mt-3 text-sm text-[#9b3733]">{error}</p> : null}
-          </div>
-        </aside>
-
-        <section className="px-5 py-5 md:px-8">
-          <header className="flex flex-col gap-4 border-b border-[#ded8ca] pb-5 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="text-sm text-[#637166]">账号身份关系工作台</p>
-              <h2 className="mt-1 text-3xl font-semibold tracking-normal">线索、绑定、找回路径</h2>
+              >
+                {connection === "ok" && (
+                  <div className="absolute inset-0 rounded-full bg-[#2f7d57] animate-ping opacity-75" />
+                )}
+              </div>
+              <span className="font-medium">
+                {connection === "ok" ? "连接正常" : connection === "failed" ? "连接失败" : "连接中..."}
+              </span>
             </div>
+            {error ? (
+              <div className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-[#9b3733]">
+                <p className="font-medium">连接错误</p>
+                <p className="mt-1">{error}</p>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="mt-auto pt-8">
             <button
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#1d4f3a] px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#1d4f3a] px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#163829] disabled:cursor-not-allowed disabled:opacity-50"
               disabled={connection === "checking"}
               onClick={() => window.location.reload()}
               type="button"
             >
-              <RefreshCw size={16} />
+              <RefreshCw className={connection === "checking" ? "animate-spin" : ""} size={16} />
               刷新数据
             </button>
+          </div>
+        </aside>
+
+        {/* 主内容区 */}
+        <section className="px-6 py-6 md:px-10">
+          <header className="mb-8 border-b border-[#ded8ca] pb-6">
+            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+              <div>
+                <p className="text-sm text-[#637166]">账号身份关系工作台</p>
+                <h2 className="mt-1 text-4xl font-semibold tracking-tight">线索、绑定、找回路径</h2>
+              </div>
+            </div>
           </header>
 
-          <section className="mt-6" id="账号线索">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">账号线索</h3>
-              <span className="text-sm text-[#637166]">{accounts.length} 个账号</span>
+          {/* 账号线索表格 */}
+          <section className="mb-8" id="账号线索">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-xl font-semibold">账号线索</h3>
+              <span className="rounded-full bg-[#1d4f3a]/10 px-3 py-1 text-sm font-medium text-[#1d4f3a]">
+                {accounts.length} 个账号
+              </span>
             </div>
 
             {connection === "failed" ? (
@@ -199,31 +270,59 @@ function App() {
             ) : accounts.length === 0 ? (
               <StatusBlock title="暂无账号线索" detail="当前后端没有账号记录。可开启 DEMO_SEED_ON_EMPTY 或通过 API 导入虚构演示数据。" />
             ) : (
-              <div className="mt-4 overflow-hidden rounded-md border border-[#d9d3c2] bg-[#fbfaf6]">
+              <div className="overflow-hidden rounded-xl border border-[#d9d3c2] bg-white shadow-sm">
                 <table className="w-full border-collapse text-left text-sm">
-                  <thead className="bg-[#ebe7dc] text-[#637166]">
+                  <thead className="bg-[#f8f7f3] text-[#637166]">
                     <tr>
-                      <th className="px-4 py-3 font-medium">平台</th>
-                      <th className="px-4 py-3 font-medium">重要性</th>
-                      <th className="px-4 py-3 font-medium">登录方式</th>
-                      <th className="px-4 py-3 font-medium">风险</th>
+                      <th className="px-5 py-4 font-medium">平台</th>
+                      <th className="px-5 py-4 font-medium">重要性</th>
+                      <th className="px-5 py-4 font-medium">登录方式</th>
+                      <th className="px-5 py-4 font-medium">风险</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {accounts.map((account) => (
+                    {accounts.map((account, index) => (
                       <tr
-                        className={`cursor-pointer border-t border-[#e5dfd1] ${
-                          account.id === selectedAccount?.id ? "bg-[#edf4ef]" : "hover:bg-[#f3f0e8]"
+                        className={`cursor-pointer border-t border-[#f0ede3] transition-colors ${
+                          account.id === selectedAccount?.id
+                            ? "bg-[#edf4ef]"
+                            : index % 2 === 0
+                              ? "bg-white hover:bg-[#fafaf5]"
+                              : "bg-[#fbfaf6] hover:bg-[#f5f4ef]"
                         }`}
                         key={account.id}
                         onClick={() => setSelectedId(account.id)}
                       >
-                        <td className="px-4 py-3 font-medium">{account.platformName}</td>
-                        <td className="px-4 py-3">{account.importance}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-5 py-4 font-medium text-[#1d4f3a]">{account.platformName}</td>
+                        <td className="px-5 py-4">
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                              account.importance === "critical"
+                                ? "bg-red-100 text-red-700"
+                                : account.importance === "high"
+                                  ? "bg-orange-100 text-orange-700"
+                                  : account.importance === "medium"
+                                    ? "bg-yellow-100 text-yellow-700"
+                                    : "bg-gray-100 text-gray-700"
+                            }`}
+                          >
+                            {account.importance}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-[#39443c]">
                           {account.loginMethods.map((method) => method.type).join(", ") || "unknown"}
                         </td>
-                        <td className="px-4 py-3">{account.riskTags.join("、") || "未标记"}</td>
+                        <td className="px-5 py-4">
+                          {account.riskTags.length > 0 ? (
+                            <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                              {account.riskTags.length} 个风险
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-600">
+                              安全
+                            </span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -232,12 +331,13 @@ function App() {
             )}
           </section>
 
-          <section className="mt-8 grid gap-4 xl:grid-cols-2">
+          {/* 操作按钮区 */}
+          <section className="mb-8 grid gap-4 lg:grid-cols-2">
             <ActionBand
               buttonLabel="生成找回计划"
               busy={busyAction === "recovery"}
               disabled={!selectedAccount}
-              icon={<ClipboardCheck size={18} />}
+              icon={<ClipboardCheck size={20} />}
               id="找回计划"
               onClick={handleRecovery}
               title="本人账号找回计划"
@@ -247,7 +347,7 @@ function App() {
             <ActionBand
               buttonLabel="运行安全体检"
               busy={busyAction === "audit"}
-              icon={<ShieldCheck size={18} />}
+              icon={<ShieldCheck size={20} />}
               id="安全体检"
               onClick={handleAudit}
               title="安全体检"
@@ -256,18 +356,19 @@ function App() {
             </ActionBand>
           </section>
 
-          <section className="mt-8 grid gap-4 xl:grid-cols-2" id="迁移检查">
-            <ToolForm icon={<Phone size={18} />} onSubmit={handlePhoneMigration} title="手机号迁移">
+          {/* 迁移检查 */}
+          <section className="mb-8 grid gap-4 lg:grid-cols-2" id="迁移检查">
+            <ToolForm icon={<Phone size={20} />} onSubmit={handlePhoneMigration} title="手机号迁移">
               <input
-                className="min-w-0 flex-1 rounded-md border border-[#cfc7b5] bg-white px-3 py-2"
+                className="min-w-0 flex-1 rounded-lg border border-[#cfc7b5] bg-white px-4 py-2.5 transition-colors focus:border-[#1d4f3a] focus:outline-none focus:ring-2 focus:ring-[#1d4f3a]/20"
                 onChange={(event) => setPhone(event.target.value)}
                 value={phone}
               />
               <SubmitButton busy={busyAction === "phone"} label="检查手机号" />
             </ToolForm>
-            <ToolForm icon={<Mail size={18} />} onSubmit={handleEmailMigration} title="邮箱迁移">
+            <ToolForm icon={<Mail size={20} />} onSubmit={handleEmailMigration} title="邮箱迁移">
               <input
-                className="min-w-0 flex-1 rounded-md border border-[#cfc7b5] bg-white px-3 py-2"
+                className="min-w-0 flex-1 rounded-lg border border-[#cfc7b5] bg-white px-4 py-2.5 transition-colors focus:border-[#1d4f3a] focus:outline-none focus:ring-2 focus:ring-[#1d4f3a]/20"
                 onChange={(event) => setEmail(event.target.value)}
                 value={email}
               />
@@ -275,37 +376,41 @@ function App() {
             </ToolForm>
           </section>
 
-          <section className="mt-8 grid gap-4 xl:grid-cols-2" id="OCR 导入">
-            <form className="rounded-md border border-[#d9d3c2] bg-[#fbfaf6] p-4" onSubmit={handleOcrImport}>
-              <h3 className="flex items-center gap-2 font-semibold">
-                <FileScan size={18} />
+          {/* OCR 导入和安全问答 */}
+          {activeTab === "OCR 导入" && (
+          <section className="grid gap-4 lg:grid-cols-2" id="OCR 导入">
+            <form className="rounded-xl border border-[#d9d3c2] bg-white p-5 shadow-sm" onSubmit={handleOcrImport}>
+              <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold">
+                <FileScan size={20} />
                 OCR 导入
               </h3>
               <textarea
-                className="mt-3 min-h-28 w-full rounded-md border border-[#cfc7b5] bg-white p-3"
+                className="mb-4 min-h-32 w-full rounded-lg border border-[#cfc7b5] bg-[#fbfaf6] p-4 text-sm transition-colors focus:border-[#1d4f3a] focus:outline-none focus:ring-2 focus:ring-[#1d4f3a]/20"
                 onChange={(event) => setOcrText(event.target.value)}
+                placeholder="粘贴截图识别文本..."
                 value={ocrText}
               />
               <SubmitButton busy={busyAction === "ocr"} label="提取线索" />
             </form>
 
-            <form className="rounded-md border border-[#d9d3c2] bg-[#fbfaf6] p-4" onSubmit={handleChat}>
-              <h3 className="flex items-center gap-2 font-semibold">
-                <SearchCheck size={18} />
+            <form className="rounded-xl border border-[#d9d3c2] bg-white p-5 shadow-sm" onSubmit={handleChat}>
+              <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold">
+                <MessageSquare size={20} />
                 安全问答
               </h3>
-              <label className="mt-3 block text-sm text-[#637166]" htmlFor="chat-input">
+              <label className="mb-2 block text-sm font-medium text-[#637166]" htmlFor="chat-input">
                 安全问答输入
               </label>
-              <div className="mt-2 flex gap-2">
+              <div className="flex gap-2">
                 <input
-                  className="min-w-0 flex-1 rounded-md border border-[#cfc7b5] bg-white px-3 py-2"
+                  className="min-w-0 flex-1 rounded-lg border border-[#cfc7b5] bg-[#fbfaf6] px-4 py-2.5 text-sm transition-colors focus:border-[#1d4f3a] focus:outline-none focus:ring-2 focus:ring-[#1d4f3a]/20"
                   id="chat-input"
                   onChange={(event) => setChatMessage(event.target.value)}
+                  placeholder="输入您的问题..."
                   value={chatMessage}
                 />
                 <button
-                  className="inline-flex items-center gap-2 rounded-md bg-[#1d4f3a] px-4 py-2 text-sm font-medium text-white"
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#1d4f3a] px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#163829] disabled:cursor-not-allowed disabled:opacity-50"
                   type="submit"
                 >
                   <Send size={16} />
@@ -314,10 +419,15 @@ function App() {
               </div>
             </form>
           </section>
+          )}
+
+          {/* 模型配置页面 */}
+          {activeTab === "模型配置" && <LLMConfigPage />}
         </section>
 
-        <aside className="border-t border-[#d9d3c2] bg-[#fbfaf6] px-5 py-5 lg:border-l lg:border-t-0">
-          <h2 className="text-lg font-semibold">详情</h2>
+        {/* 右侧详情面板 */}
+        <aside className="border-t border-[#d9d3c2] bg-[#fbfaf6]/80 px-6 py-6 lg:border-l lg:border-t-0">
+          <h2 className="mb-6 text-xl font-semibold">详情</h2>
           <SelectedAccount account={selectedAccount} />
           <ResultView result={result} />
         </aside>
@@ -328,7 +438,7 @@ function App() {
 
 function StatusBlock({ title, detail }: { title: string; detail: string }) {
   return (
-    <div className="mt-4 rounded-md border border-[#d9d3c2] bg-[#fbfaf6] p-5">
+    <div className="mt-4 rounded-lg border border-[#d9d3c2] bg-[#fbfaf6] p-5">
       <h3 className="font-semibold">{title}</h3>
       <p className="mt-2 text-sm text-[#637166]">{detail}</p>
     </div>
@@ -355,14 +465,14 @@ function ActionBand({
   title: string;
 }) {
   return (
-    <section className="rounded-md border border-[#d9d3c2] bg-[#fbfaf6] p-4" id={id}>
+    <section className="rounded-xl border border-[#d9d3c2] bg-white p-5 shadow-sm" id={id}>
       <h3 className="flex items-center gap-2 font-semibold">
         {icon}
         {title}
       </h3>
       <p className="mt-2 text-sm text-[#637166]">{children}</p>
       <button
-        className="mt-4 rounded-md bg-[#1d4f3a] px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-4 rounded-lg bg-[#1d4f3a] px-4 py-2 text-sm font-medium text-white transition-all hover:bg-[#163829] disabled:cursor-not-allowed disabled:opacity-50"
         disabled={disabled || busy}
         onClick={onClick}
         type="button"
@@ -385,7 +495,7 @@ function ToolForm({
   title: string;
 }) {
   return (
-    <form className="rounded-md border border-[#d9d3c2] bg-[#fbfaf6] p-4" onSubmit={onSubmit}>
+    <form className="rounded-xl border border-[#d9d3c2] bg-white p-5 shadow-sm" onSubmit={onSubmit}>
       <h3 className="flex items-center gap-2 font-semibold">
         {icon}
         {title}
@@ -398,7 +508,7 @@ function ToolForm({
 function SubmitButton({ busy, label }: { busy: boolean; label: string }) {
   return (
     <button
-      className="rounded-md bg-[#1d4f3a] px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+      className="rounded-lg bg-[#1d4f3a] px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#163829] disabled:cursor-not-allowed disabled:opacity-50"
       disabled={busy}
       type="submit"
     >

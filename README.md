@@ -76,6 +76,43 @@ set PASSWORD_MEMORY_DATA_FILE=backend/data/accounts.enc
 uvicorn backend.main:app --reload
 ```
 
+### LLM 配置（推荐：LiteLLM Proxy）
+
+本项目通过 **LiteLLM Proxy** 作为 LLM 网关，统一管理多个 LLM 提供商（OpenAI、Anthropic、Ollama 等）。配置持久化到 PostgreSQL，无需硬编码 API Key。
+
+**部署 LiteLLM Proxy**：
+
+```bash
+# 1. 进入 litellm 目录
+cd litellm
+
+# 2. 复制环境变量模板并填入实际的 API Key
+cp .env.example .env
+# 编辑 .env，至少填入 OPENAI_API_KEY
+
+# 3. 启动服务
+docker-compose up -d
+
+# 4. 验证服务健康
+curl http://localhost:4000/health
+```
+
+**管理界面**：
+- LiteLLM 管理 UI: http://localhost:4000（使用 `LITELLM_MASTER_KEY` 登录）
+- 项目内置管理页: 启动前后端后，在左侧导航栏点击"模型配置"
+
+**环境变量**（后端）：
+
+- `LITELLM_PROXY_URL`: LiteLLM Proxy 地址（默认：`http://localhost:4000`）
+- `LITELLM_MASTER_KEY`: LiteLLM 管理密钥（默认：`sk-litellm-master-key`）
+- `LLM_DEFAULT_MODEL`: 默认模型别名（默认：`gpt-4o-mini`）
+
+**特性**：
+- 支持动态添加/删除/切换模型（通过管理 UI 或 API）
+- 支持 OpenAI、Anthropic、Gemini、Ollama、vLLM 等 100+ 模型
+- 配置持久化到 PostgreSQL，重启不丢失
+- Proxy 不可用时自动回退到 mock 模式
+
 健康检查：
 
 ```bash
@@ -182,7 +219,7 @@ curl <Render URL>/health
 
 ```bash
 python -m pytest -q
-python -m py_compile backend/main.py backend/models.py backend/schemas.py backend/storage.py backend/encryption.py backend/seed_demo.py backend/services/clue_extractor.py backend/services/migration_checker.py backend/services/mock_llm.py backend/services/privacy_guard.py backend/services/recovery_planner.py backend/services/risk_auditor.py
+python -m py_compile backend/main.py backend/models.py backend/schemas.py backend/storage.py backend/encryption.py backend/seed_demo.py backend/llm_config_store.py backend/services/clue_extractor.py backend/services/litellm_proxy_client.py backend/services/llm_service.py backend/services/migration_checker.py backend/services/mock_llm.py backend/services/privacy_guard.py backend/services/recovery_planner.py backend/services/risk_auditor.py
 ```
 
 前端：

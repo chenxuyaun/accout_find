@@ -1,0 +1,54 @@
+# LiteLLM Proxy 初始模型配置
+# 注意：当 STORE_MODEL_IN_DB=True 时，启动后可通过管理 UI 或 API 动态管理模型，
+# 不需要编辑此文件重启。
+
+model_list:
+  # 默认预配置一个 OpenAI 模型（通过环境变量注入 API key）
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: ${OPENAI_API_KEY}
+      rpm: 100
+      tpm: 100000
+
+  # 如果设置了 ANTHROPIC_API_KEY，则加载 Claude 模型
+  - model_name: claude-3-5-sonnet
+    litellm_params:
+      model: anthropic/claude-3-5-sonnet-20241022
+      api_key: ${ANTHROPIC_API_KEY}
+      rpm: 50
+      tpm: 50000
+
+# LiteLLM Proxy 常规设置
+general_settings:
+  master_key: ${LITELLM_MASTER_KEY}
+  database_url: ${DATABASE_URL}
+  store_model_in_db: true
+
+  # 速率限制
+  set_verbose: true
+
+  # 允许的 IP（留空表示不限制）
+  allowed_ip_addresses: []
+
+litellm_settings:
+  # 请求超时（秒）
+  request_timeout: 120
+
+  # 失败重试
+  num_retries: 2
+
+  # 关闭时丢弃数据库中的数据（开发环境可开启，生产环境应为 false）
+  drop_params: false
+
+  # 设置最大并行请求数
+  max_parallel_requests: 100
+
+router_settings:
+  # 路由策略：按使用量最少优先
+  routing_strategy: "usage-based-routing-v2"
+
+  # 允许的回退模型
+  allowed_fails: 3
+  num_retries: 2
+  fallbacks: []

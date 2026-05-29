@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from backend.models import AccountIdentity
+from backend.schemas import SafetyBlockedResponse
 
 
 def build_recovery_plan(platform_name: str, accounts: list[AccountIdentity], claim_ownership: bool) -> dict:
     if not claim_ownership:
-        return {
-            "status": "safety_blocked",
-            "code": "ownership_required",
-            "message": "找回建议仅适用于你本人合法拥有的账号，请先确认账号归属。",
-        }
+        return SafetyBlockedResponse(
+            code="ownership_required",
+            message="找回建议仅适用于你本人合法拥有的账号，请先确认账号归属。",
+        ).model_dump()
 
     account = next((item for item in accounts if item.platformName == platform_name), None)
     if not account:
